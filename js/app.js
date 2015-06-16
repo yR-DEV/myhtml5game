@@ -2,6 +2,7 @@
  * Initialize the Game and starts it.
  */
 var game = new Game();
+var clearRect = [];
 
 function init() {
 	if(game.init())
@@ -176,27 +177,29 @@ function pool(maxSize){
 
 //creating a ship object that the player will be able to move around the screen
 //the rectangles is used again to continuously redraw the shape
-function ship(){
-	this.speed = 4;
+function Ship() {
+	this.speed = 3;
 	this.bulletPool = new pool(30);
 	this.bulletPool.init();
 
-	var fireRate = 20;
+	var fireRate = 15;
 	var counter = 0;
 
-	this.draw = function(){
-		this.context.drawImage(imageRepository.spaceship, this.x, this.y)
+	this.draw = function() {
+		this.context.drawImage(imageRepository.spaceship, this.x, this.y);
 	};
 	this.move = function() {
-		counter ++
-		//checking for user input to determine movement of the spaceship
-		if(KEY_STATUS.left || KEY_STATUS.right || KEY_STATUS.down || KEY_STATUS.up){
-			//if this evals to true, the ship has moved so we need to remove it from its current location and redraw
-			//it in its new location
+		counter++;
+		// Determine if the action is move action
+		if (KEY_STATUS.left || KEY_STATUS.right ||
+			KEY_STATUS.down || KEY_STATUS.up) {
+			// The ship moved, so erase it's current image so it can
+			// be redrawn in it's new location
 			this.context.clearRect(this.x, this.y, this.width, this.height);
 
-			//updating the x and the y according to the direction moved
-			//also redraw the ship in its new location
+			// Update x and y according to the direction to move and
+			// redraw the ship. Change the else if's to if statements
+			// to have diagonal movement.
 			if (KEY_STATUS.left) {
 				this.x -= this.speed
 				if (this.x <= 0) // Keep player within the screen
@@ -218,9 +221,21 @@ function ship(){
 			// Finish by redrawing the ship
 			this.draw();
 		}
-	}
-}
 
+		if (KEY_STATUS.space && counter >= fireRate) {
+			this.fire();
+			counter = 0;
+		}
+	};
+
+	/*
+	 * Fires two bullets
+	 */
+	this.fire = function() {
+		this.bulletPool.getTwo(this.x+6, this.y, 3, this.x+33, this.y, 3);
+	};
+}
+Ship.prototype = new Drawable();
 
 //gameobject
 function Game() {
@@ -229,20 +244,40 @@ function Game() {
 	this.init = function() {
 		// Get the canvas element
 		this.bgCanvas = document.getElementById('background');
+		this.shipCanvas = document.getElementById('car');
+		this.mainCanvas = document.getElementById('main');
 
 		// Test to see if canvas is supported
 		if (this.bgCanvas.getContext) {
 			this.bgContext = this.bgCanvas.getContext('2d');
+			this.shipContext = this.shipCanvas.getContext('2d');
+			this.mainContext = this.mainCanvas.getContext('2d');
 
 			// Initialize objects to contain their context and canvas
-			// information
+			// information, all 3 canvas's
 			Background.prototype.context = this.bgContext;
 			Background.prototype.canvasWidth = this.bgCanvas.width;
 			Background.prototype.canvasHeight = this.bgCanvas.height;
 
+			Ship.prototype.shipContext = this.shipContext
+			Ship.prototype.canvasWidth = this.shipCanvas.width;
+			Ship.prototype.canvasHeight = this.shipCanvas.height;
+
+			bullets.prototype.context = this.mainContext;
+			bullets.prototype.canvasWidth = this.mainCanvas.width;
+			bullets.prototype.canvasHeight = this.mainCanvas.height;
+
 			// Initialize the background object
 			this.background = new Background();
 			this.background.init(0,0); // Set draw point to 0,0
+
+			//initializing userobject.
+			this.ship = new Ship();
+			//start the ship at the bottom of the canvas
+			var shipStartX = this.shipCanvas.width/2 - imageRepository.spaceship.width;
+			var shipStartY = this.shipCanvas.height/2 - imageRepository.spaceship.height;
+			this.ship.init(shipStartX, shipStartY, imageRepository.spaceship.width, imageRepository.spaceship.height);
+
 			return true;
 		} else {
 			return false;
@@ -253,26 +288,52 @@ function Game() {
 	this.start = function() {
 		animate();
 	};
-}
+
+};
 
 
-/**
- * The animation loop. Calls the requestAnimationFrame shim to
- * optimize the game loop and draws all game objects. This
- * function must be a gobal function and cannot be within an
- * object.
- */
+//the animation loop that just draws the background fornow
 function animate() {
 	requestAnimFrame( animate );
 	game.background.draw();
+	game.background.draw();
+	game.ship.move();
+	game.ship.bulletPool.animate();
+}
+
+KEY_CODES = {
+  32: 'space',
+  37: 'left',
+  38: 'up',
+  39: 'right',
+  40: 'down',
+}
+
+KEY_STATUS = {};
+for (code in KEY_CODES) {
+	KEY_STATUS[KEY_CODES[code]] = false;
 }
 
 
-/**
- * requestAnim shim layer by Paul Irish
- * Finds the first API that works to optimize the animation loop,
- * otherwise defaults to setTimeout().
- */
+//both functions belowwatch for the user pushing a key and letting go of a key,
+//both of these functions will set speeds and or actions
+document.onkeydown = function(e){
+	var keyCode = (e.keyCode) ? e.keyCode: e.charCode;
+	if (KEY_CODES[keyCode]) {
+		e.preventDefault();
+		KEY_STATUS[KEY_CODES[keyCode]] = true;
+	}
+}
+
+document.onkeyup = function(e) {
+	var keyCode = (e.keyCode) ? e.keyCode: e.charCode;
+	if(KEY_CODES[keyCode]) {
+		e.preventDefault();
+		KEY_STATUS[KEY_CODES[keyCode]] = false;
+	}
+}
+
+//request animation frame API
 window.requestAnimFrame = (function(){
 	return  window.requestAnimationFrame       ||
 			window.webkitRequestAnimationFrame ||
