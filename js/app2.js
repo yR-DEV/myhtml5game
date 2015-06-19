@@ -1,20 +1,13 @@
-
 /***************
- * PART TWO - Create the player controlled ship and it's
- * properties (move and shoot)
+ * PART THREE - Create the enemy ships
  ***************/
 
 /* NOTES TO REMEMBER
- * 1. Drawing to the canvas is expensive. Try to reuse as much as the image as you can for each frame.
+ * 1. Remeber to think ahead when developing a game to what future changes will do and account for them.
  */
 
 /* RESOURCES
- * 1. http://gamedev.tutsplus.com/tutorials/implementation/object-pools-help-you-reduce-lag-in-resource-intensive-games/
- * 2. http://gameprogrammingpatterns.com/object-pool.html
- * 3. http://www.slideshare.net/ernesto.jimenez/5-tips-for-your-html5-games
- * 4. http://www.kontain.com/fi/entries/94636/ (quote on performace)
- * 5. http://code.bytespider.eu/post/21438674255/dirty-rectangles
- * 6. http://www.html5rocks.com/en/tutorials/canvas/performance/
+ * 1. http://gamedev.tutsplus.com/tutorials/implementation/quick-tip-the-oop-principle-of-coupling/
  */
 
 
@@ -39,9 +32,11 @@ var imageRepository = new function() {
 	this.background = new Image();
 	this.spaceship = new Image();
 	this.bullet = new Image();
+	this.enemy = new Image();
+	this.enemyBullet = new Image();
 
 	// Ensure all images have loaded before starting the game
-	var numImages = 3;
+	var numImages = 5;
 	var numLoaded = 0;
 	function imageLoaded() {
 		numLoaded++;
@@ -58,11 +53,19 @@ var imageRepository = new function() {
 	this.bullet.onload = function() {
 		imageLoaded();
 	}
+	this.enemy.onload = function() {
+		imageLoaded();
+	}
+	this.enemyBullet.onload = function() {
+		imageLoaded();
+	}
 
 	// Set images src
 	this.background.src = "img/road.png";
 	this.spaceship.src = "img/car.png";
 	this.bullet.src = "img/bullets.png";
+	this.enemy.src = "img/enemyAndrew.png";
+	this.enemyBullet.src = "img/cssBullets.jpeg";
 }
 
 
@@ -123,33 +126,43 @@ Background.prototype = new Drawable();
  * Creates the Bullet object which the ship fires. The bullets are
  * drawn on the "main" canvas.
  */
-function Bullet() {
+function Bullet(object) {
 	this.alive = false; // Is true if the bullet is currently in use
-
+	var self = object;
 	/*
 	 * Sets the bullet values
 	 */
 	this.spawn = function(x, y, speed) {
 		this.x = x;
 		this.y = y;
-		this.speed = speed + 2;
+		this.speed = speed;
 		this.alive = true;
 	};
 
 	/*
 	 * Uses a "drity rectangle" to erase the bullet and moves it.
-	 * Returns true if the bullet moved off the screen, indicating that
+	 * Returns true if the bullet moved of the screen, indicating that
 	 * the bullet is ready to be cleared by the pool, otherwise draws
 	 * the bullet.
 	 */
 	this.draw = function() {
-		this.context.clearRect(this.x, this.y, this.width, this.height);
+		this.context.clearRect(this.x-1, this.y-1, this.width+1, this.height+1);
 		this.y -= this.speed;
-		if (this.y <= 0 - this.height) {
+		if (self === "bullet" && this.y <= 0 - this.height) {
+			return true;
+		}
+		else if (self === "enemyBullet" && this.y >= this.canvasHeight) {
 			return true;
 		}
 		else {
-			this.context.drawImage(imageRepository.bullet, this.x, this.y);
+			if (self === "bullet") {
+				this.context.drawImage(imageRepository.bullet, this.x, this.y);
+			}
+			else if (self === "enemyBullet") {
+				this.context.drawImage(imageRepository.enemyBullet, this.x, this.y);
+			}
+
+			return false;
 		}
 	};
 
@@ -170,7 +183,7 @@ Bullet.prototype = new Drawable();
  * Custom Pool object. Holds Bullet objects to be managed to prevent
  * garbage collection.
  * The pool works as follows:
- * - When the pool is initialized, it populates an array with
+ * - When the pool is initialized, it popoulates an array with
  *   Bullet objects.
  * - When the pool needs to create a new object for use, it looks at
  *   the last item in the array and checks to see if it is currently
@@ -193,15 +206,30 @@ function Pool(maxSize) {
 	var pool = [];
 
 	/*
-	 * Populates the pool array with Bullet objects
+	 * Populates the pool array with the given object
 	 */
-	this.init = function() {
-		for (var i = 0; i < size; i++) {
-			// Initalize the bullet object
-			var bullet = new Bullet();
-			bullet.init(0,0, imageRepository.bullet.width,
-			            imageRepository.bullet.height);
-			pool[i] = bullet;
+	this.init = function(object) {
+		if (object == "bullet") {
+			for (var i = 0; i < size; i++) {
+				// Initalize the object
+				var bullet = new Bullet("bullet");
+				bullet.init(0,0, imageRepository.bullet.width, imageRepository.bullet.height);
+				pool[i] = bullet;
+			}
+		}
+		else if (object == "enemy") {
+			for (var i = 0; i < size; i++) {
+				var enemy = new Enemy();
+				enemy.init(0,0, imageRepository.enemy.width, imageRepository.enemy.height);
+				pool[i] = enemy;
+			}
+		}
+		else if (object == "enemyBullet") {
+			for (var i = 0; i < size; i++) {
+				var bullet = new Bullet("enemyBullet");
+				bullet.init(0,0, imageRepository.enemyBullet.width, imageRepository.enemyBullet.height);
+				pool[i] = bullet;
+			}
 		}
 	};
 
@@ -222,11 +250,10 @@ function Pool(maxSize) {
 	 * fire and only have 1 bullet spawn instead of 2.
 	 */
 	this.getTwo = function(x1, y1, speed1, x2, y2, speed2) {
-		if(!pool[size - 1].alive &&
-		   !pool[size - 2].alive) {
-				this.get(x1, y1, speed1);
-				this.get(x2, y2, speed2);
-			 }
+		if(!pool[size - 1].alive && !pool[size - 2].alive) {
+			this.get(x1, y1, speed1);
+			this.get(x2, y2, speed2);
+		}
 	};
 
 	/*
@@ -255,10 +282,9 @@ function Pool(maxSize) {
  * around the screen.
  */
 function Ship() {
-	this.speed = 6;
+	this.speed = 3;
 	this.bulletPool = new Pool(30);
-	this.bulletPool.init();
-
+	this.bulletPool.init("bullet");
 	var fireRate = 15;
 	var counter = 0;
 
@@ -269,7 +295,7 @@ function Ship() {
 		counter++;
 		// Determine if the action is move action
 		if (KEY_STATUS.left || KEY_STATUS.right ||
-			KEY_STATUS.down || KEY_STATUS.up) {
+				KEY_STATUS.down || KEY_STATUS.up) {
 			// The ship moved, so erase it's current image so it can
 			// be redrawn in it's new location
 			this.context.clearRect(this.x, this.y, this.width, this.height);
@@ -279,7 +305,7 @@ function Ship() {
 			// to have diagonal movement.
 			if (KEY_STATUS.left) {
 				this.x -= this.speed
-				if (this.x <= 0) // Keep player within the screen
+				if (this.x <= 0) // Kep player within the screen
 					this.x = 0;
 			} else if (KEY_STATUS.right) {
 				this.x += this.speed
@@ -316,6 +342,80 @@ function Ship() {
 Ship.prototype = new Drawable();
 
 
+/**
+ * Create the Enemy ship object.
+ */
+function Enemy() {
+	var percentFire = .01;
+	var chance = 0;
+	this.alive = false;
+
+	/*
+	 * Sets the Enemy values
+	 */
+	this.spawn = function(x, y, speed) {
+		this.x = x;
+		this.y = y;
+		this.speed = speed;
+		this.speedX = 0;
+		this.speedY = speed;
+		this.alive = true;
+		this.leftEdge = this.x - 90;
+		this.rightEdge = this.x + 90;
+		this.bottomEdge = this.y + 140;
+	};
+
+	/*
+	 * Move the enemy
+	 */
+	this.draw = function() {
+		this.context.clearRect(this.x-1, this.y, this.width+1, this.height);
+		this.x += this.speedX;
+		this.y += this.speedY;
+		if (this.x <= this.leftEdge) {
+			this.speedX = this.speed;
+		}
+		else if (this.x >= this.rightEdge + this.width) {
+			this.speedX = -this.speed;
+		}
+		else if (this.y >= this.bottomEdge) {
+			this.speed = 1.5;
+			this.speedY = 0;
+			this.y -= 5;
+			this.speedX = -this.speed;
+		}
+
+		this.context.drawImage(imageRepository.enemy, this.x, this.y);
+
+		// Enemy has a chance to shoot every movement
+		chance = Math.floor(Math.random()*101);
+		if (chance/100 < percentFire) {
+			this.fire();
+		}
+	};
+
+	/*
+	 * Fires a bullet
+	 */
+	this.fire = function() {
+		game.enemyBulletPool.get(this.x+this.width/2, this.y+this.height, -2.5);
+	}
+
+	/*
+	 * Resets the enemy values
+	 */
+	this.clear = function() {
+		this.x = 0;
+		this.y = 0;
+		this.speed = 0;
+		this.speedX = 0;
+		this.speedY = 0;
+		this.alive = false;
+	};
+}
+Enemy.prototype = new Drawable();
+
+
  /**
  * Creates the Game object which will hold all objects and data for
  * the game.
@@ -331,7 +431,7 @@ function Game() {
 	this.init = function() {
 		// Get the canvas elements
 		this.bgCanvas = document.getElementById('background');
-		this.shipCanvas = document.getElementById('car');
+		this.shipCanvas = document.getElementById('ship');
 		this.mainCanvas = document.getElementById('main');
 
 		// Test to see if canvas is supported. Only need to
@@ -355,6 +455,10 @@ function Game() {
 			Bullet.prototype.canvasWidth = this.mainCanvas.width;
 			Bullet.prototype.canvasHeight = this.mainCanvas.height;
 
+			Enemy.prototype.context = this.mainContext;
+			Enemy.prototype.canvasWidth = this.mainCanvas.width;
+			Enemy.prototype.canvasHeight = this.mainCanvas.height;
+
 			// Initialize the background object
 			this.background = new Background();
 			this.background.init(0,0); // Set draw point to 0,0
@@ -366,6 +470,26 @@ function Game() {
 			var shipStartY = this.shipCanvas.height/4*3 + imageRepository.spaceship.height*2;
 			this.ship.init(shipStartX, shipStartY, imageRepository.spaceship.width,
 			               imageRepository.spaceship.height);
+
+			// Initialize the enemy pool object
+			this.enemyPool = new Pool(30);
+			this.enemyPool.init("enemy");
+			var height = imageRepository.enemy.height;
+			var width = imageRepository.enemy.width;
+			var x = 100;
+			var y = -height;
+			var spacer = y * 1.5;
+			for (var i = 1; i <= 18; i++) {
+				this.enemyPool.get(x,y,2);
+				x += width + 25;
+				if (i % 6 == 0) {
+					x = 100;
+					y += spacer
+				}
+			}
+
+			this.enemyBulletPool = new Pool(50);
+			this.enemyBulletPool.init("enemyBullet");
 
 			return true;
 		} else {
@@ -392,6 +516,8 @@ function animate() {
 	game.background.draw();
 	game.ship.move();
 	game.ship.bulletPool.animate();
+	game.enemyPool.animate();
+	game.enemyBulletPool.animate();
 }
 
 
@@ -406,7 +532,7 @@ KEY_CODES = {
 }
 
 // Creates the array to hold the KEY_CODES and sets all their values
-// to false. Checking true/flase is the quickest way to check status
+// to true. Checking true/flase is the quickest way to check status
 // of a key press and which one was pressed when determining
 // when to move and which direction.
 KEY_STATUS = {};
@@ -420,12 +546,12 @@ for (code in KEY_CODES) {
  * key it was.
  */
 document.onkeydown = function(e) {
-  // Firefox and opera use charCode instead of keyCode to
-  // return which key was pressed.
-  var keyCode = (e.keyCode) ? e.keyCode : e.charCode;
+	// Firefox and opera use charCode instead of keyCode to
+	// return which key was pressed.
+	var keyCode = (e.keyCode) ? e.keyCode : e.charCode;
   if (KEY_CODES[keyCode]) {
-	e.preventDefault();
-	KEY_STATUS[KEY_CODES[keyCode]] = true;
+		e.preventDefault();
+    KEY_STATUS[KEY_CODES[keyCode]] = true;
   }
 }
 /**
